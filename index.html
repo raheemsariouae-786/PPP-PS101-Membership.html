@@ -993,7 +993,7 @@ function openCardForMember(m){
     sigBox.innerHTML='<div style="font-size:6px;color:rgba(255,255,255,0.2);letter-spacing:0.5px;text-align:center">Signature</div>';
     document.getElementById('sigToggleBtn').textContent='✍️ جنرل سیکرٹری دستخط کریں';
   }
-  // QR Code
+  // ── QR Code - Pure Canvas (html2canvas compatible) ──────────────────
   const qrDiv=document.getElementById('c_qr');
   qrDiv.innerHTML='';
   const qrData=[
@@ -1007,18 +1007,38 @@ function openCardForMember(m){
     `Issued:${todayEn()}`
   ].filter(Boolean).join('|');
 
-  // Use QRCode.js if loaded, else fallback to API
+  // Draw QR directly as canvas element
   if(window.QRCode){
-    new QRCode(qrDiv,{
+    // QRCode.js renders an img+canvas — we convert to single canvas for html2canvas
+    const tempDiv=document.createElement('div');
+    tempDiv.style.cssText='position:absolute;top:-9999px;left:-9999px;';
+    document.body.appendChild(tempDiv);
+    new QRCode(tempDiv,{
       text:qrData,width:70,height:70,
       colorDark:'#D4AF37',colorLight:'#0d0d0d',
       correctLevel:QRCode.CorrectLevel.M
     });
+    // Give it time to render, then copy canvas
+    setTimeout(()=>{
+      const qrCanvas=tempDiv.querySelector('canvas');
+      if(qrCanvas){
+        const display=document.createElement('canvas');
+        display.width=70;display.height=70;
+        display.style.cssText='border-radius:4px;display:block;';
+        display.getContext('2d').drawImage(qrCanvas,0,0,70,70);
+        qrDiv.appendChild(display);
+      }
+      document.body.removeChild(tempDiv);
+    },200);
   } else {
-    const img=document.createElement('img');
-    img.src=`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(qrData)}&color=D4AF37&bgcolor=0d0d0d&margin=6`;
-    img.width=70;img.height=70;img.style.borderRadius='4px';
-    qrDiv.appendChild(img);
+    // Fallback: draw simple QR placeholder canvas
+    const c=document.createElement('canvas');
+    c.width=70;c.height=70;
+    const ctx2=c.getContext('2d');
+    ctx2.fillStyle='#0d0d0d';ctx2.fillRect(0,0,70,70);
+    ctx2.fillStyle='#D4AF37';
+    ctx2.font='bold 8px monospace';ctx2.fillText('QR',25,38);
+    qrDiv.appendChild(c);
   }
   document.getElementById('cardModal').style.display='flex';
   document.getElementById('sigPadDiv').style.display='none';
