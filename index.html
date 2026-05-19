@@ -993,7 +993,7 @@ function openCardForMember(m){
     sigBox.innerHTML='<div style="font-size:6px;color:rgba(255,255,255,0.2);letter-spacing:0.5px;text-align:center">Signature</div>';
     document.getElementById('sigToggleBtn').textContent='✍️ جنرل سیکرٹری دستخط کریں';
   }
-  // ── QR Code - Pure Canvas (html2canvas compatible) ──────────────────
+  // ── QR Code — pure canvas, stored as base64 img so html2canvas works ──
   const qrDiv=document.getElementById('c_qr');
   qrDiv.innerHTML='';
   const qrData=[
@@ -1007,43 +1007,45 @@ function openCardForMember(m){
     `Issued:${todayEn()}`
   ].filter(Boolean).join('|');
 
-  // Draw QR directly as canvas element
   if(window.QRCode){
-    // QRCode.js renders an img+canvas — we convert to single canvas for html2canvas
     const tempDiv=document.createElement('div');
-    tempDiv.style.cssText='position:absolute;top:-9999px;left:-9999px;';
+    tempDiv.style.cssText='position:fixed;top:-9999px;left:-9999px;visibility:hidden;';
     document.body.appendChild(tempDiv);
     new QRCode(tempDiv,{
       text:qrData,width:70,height:70,
       colorDark:'#D4AF37',colorLight:'#0d0d0d',
       correctLevel:QRCode.CorrectLevel.M
     });
-    // Give it time to render, then copy canvas
+    // Wait for QRCode.js to finish rendering
     setTimeout(()=>{
       const qrCanvas=tempDiv.querySelector('canvas');
       if(qrCanvas){
-        const display=document.createElement('canvas');
-        display.width=70;display.height=70;
-        display.style.cssText='border-radius:4px;display:block;';
-        display.getContext('2d').drawImage(qrCanvas,0,0,70,70);
-        qrDiv.appendChild(display);
+        // Convert canvas → base64 → <img> so html2canvas can read it
+        const b64=qrCanvas.toDataURL('image/png');
+        const img=document.createElement('img');
+        img.src=b64;
+        img.width=70;img.height=70;
+        img.style.cssText='border-radius:4px;display:block;';
+        qrDiv.appendChild(img);
       }
       document.body.removeChild(tempDiv);
-    },200);
+    },300);
   } else {
-    // Fallback: draw simple QR placeholder canvas
+    // Fallback simple canvas
     const c=document.createElement('canvas');
     c.width=70;c.height=70;
     const ctx2=c.getContext('2d');
     ctx2.fillStyle='#0d0d0d';ctx2.fillRect(0,0,70,70);
-    ctx2.fillStyle='#D4AF37';
-    ctx2.font='bold 8px monospace';ctx2.fillText('QR',25,38);
+    ctx2.fillStyle='#D4AF37';ctx2.font='bold 9px monospace';
+    ctx2.textAlign='center';ctx2.fillText('QR CODE',35,32);
+    ctx2.fillText(m.memberID.slice(-6),35,48);
     qrDiv.appendChild(c);
   }
   document.getElementById('cardModal').style.display='flex';
   document.getElementById('sigPadDiv').style.display='none';
   hideStatus();
 }
+
 
 function closeModal(){
   document.getElementById('cardModal').style.display='none';
@@ -1135,58 +1137,382 @@ function showStatus(msg){
 }
 function hideStatus(){document.getElementById('modalStatus').style.display='none';}
 
-function printCard(){
-  const card=document.getElementById('ppp-card');
-  const w=window.open('','_blank');
-  w.document.write(`<!DOCTYPE html><html><head><title>PPP Card - ${currentMember?.name||''}</title>
-  <style>*{margin:0;padding:0;box-sizing:border-box}
-  body{background:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
-  @media print{body{padding:0}}</style></head>
-  <body onload="window.print()">${card.outerHTML}</body></html>`);
-  w.document.close();
+// ── Pure Canvas 2D card renderer — no html2canvas, no CORS issues ──────────
+async function drawCardToCanvas(){
+  const m=currentMember; if(!m)return null;
+  const W=920, H=580;
+  const cv=document.createElement('canvas');
+  cv.width=W; cv.height=H;
+  const ctx=cv.getContext('2d');
+  const RED='#C8102E',BLK='#0a0a0a',GRN='#007A3D',GLD='#D4AF37',GLDL='#F5D76E';
+
+  function rr(x,y,w,h,r){
+    ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);
+    ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);
+    ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);
+    ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);
+    ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();
+  }
+
+  // Background
+  const bg=ctx.createLinearGradient(0,0,W,H);
+  bg.addColorStop(0,'#0a0a0a');bg.addColorStop(0.4,'#181818');
+  bg.addColorStop(0.7,'#0e0e0e');bg.addColorStop(1,'#131313');
+  ctx.fillStyle=bg; rr(0,0,W,H,32); ctx.fill();
+
+  // Border
+  ctx.strokeStyle='rgba(212,175,55,0.55)';ctx.lineWidth=4;
+  rr(2,2,W-4,H-4,31);ctx.stroke();
+
+  // ── TOP FLAG STRIPE ───────────────────────────────────────────────
+  const ST=18;
+  ctx.save(); rr(0,0,W,H,32); ctx.clip();
+  ctx.fillStyle=RED;  ctx.fillRect(0,0,W/3,ST);
+  ctx.fillStyle='#111'; ctx.fillRect(W/3,0,W/3,ST);
+  ctx.fillStyle=GRN;  ctx.fillRect(W*2/3,0,W/3,ST);
+  ctx.restore();
+
+  // Gold pin-line
+  const gl=ctx.createLinearGradient(0,ST,W,ST);
+  gl.addColorStop(0,'transparent');gl.addColorStop(0.2,'#9A7B1C');
+  gl.addColorStop(0.5,GLDL);gl.addColorStop(0.8,'#9A7B1C');gl.addColorStop(1,'transparent');
+  ctx.fillStyle=gl; ctx.fillRect(0,ST,W,3);
+
+  let y=ST+3;
+
+  // ── HEADER ────────────────────────────────────────────────────────
+  function drawFlag(fx,fy,fw,fh,rad){
+    ctx.save();
+    rr(fx,fy,fw,fh,rad); ctx.clip();
+    let rg=ctx.createRadialGradient(fx+fw*.15,fy+fh*.4,0,fx+fw*.15,fy+fh*.4,fw*.5);
+    rg.addColorStop(0,'#FF2040');rg.addColorStop(1,'#8B0000');
+    ctx.fillStyle=rg; ctx.fillRect(fx,fy,fw/3,fh);
+    let bg2=ctx.createRadialGradient(fx+fw*.5,fy+fh*.4,0,fx+fw*.5,fy+fh*.4,fw*.4);
+    bg2.addColorStop(0,'#2a2a2a');bg2.addColorStop(1,'#060606');
+    ctx.fillStyle=bg2; ctx.fillRect(fx+fw/3,fy,fw/3,fh);
+    let gg=ctx.createRadialGradient(fx+fw*.85,fy+fh*.4,0,fx+fw*.85,fy+fh*.4,fw*.5);
+    gg.addColorStop(0,'#00CC55');gg.addColorStop(1,'#004D1A');
+    ctx.fillStyle=gg; ctx.fillRect(fx+fw*2/3,fy,fw/3,fh);
+    // crescent
+    const cx=fx+fw*.475,cy=fy+fh*.5,r1=fh*.2,r2=fh*.155;
+    ctx.fillStyle='rgba(255,255,255,0.96)';
+    ctx.beginPath();ctx.arc(cx,cy,r1,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#1a1a1a';
+    ctx.beginPath();ctx.arc(cx+fw*.05,cy-fh*.05,r2,0,Math.PI*2);ctx.fill();
+    // star
+    const sx=fx+fw*.625,sy=fy+fh*.3,sr=fh*.11;
+    ctx.fillStyle='rgba(255,255,255,0.96)'; ctx.beginPath();
+    for(let i=0;i<5;i++){
+      const a=(i*4*Math.PI/5)-Math.PI/2,ai=a+2*Math.PI/5;
+      i===0?ctx.moveTo(sx+Math.cos(a)*sr,sy+Math.sin(a)*sr):ctx.lineTo(sx+Math.cos(a)*sr,sy+Math.sin(a)*sr);
+      ctx.lineTo(sx+Math.cos(ai)*sr*.4,sy+Math.sin(ai)*sr*.4);
+    }
+    ctx.closePath();ctx.fill();
+    ctx.restore();
+  }
+
+  const FW=208,FH=138,FY=y+10;
+  drawFlag(20,FY,FW,FH,16);
+  drawFlag(W-20-FW,FY,FW,FH,16);
+
+  const CX=W/2;
+  ctx.textAlign='center';
+
+  ctx.fillStyle='rgba(212,175,55,0.55)';
+  ctx.font='13px Arial,sans-serif';
+  ctx.fillText("اقتدار عوام کا  •  PEOPLE'S POWER",CX,y+30);
+
+  const ng=ctx.createLinearGradient(W*.25,0,W*.75,0);
+  ng.addColorStop(0,'#9A7B1C');ng.addColorStop(0.25,GLDL);
+  ng.addColorStop(0.5,GLD);ng.addColorStop(0.75,GLDL);ng.addColorStop(1,'#9A7B1C');
+  ctx.fillStyle=ng; ctx.font='bold 30px Georgia,serif';
+  ctx.fillText('PAKISTAN PEOPLES PARTY',CX,y+68);
+
+  ctx.fillStyle='rgba(212,175,55,0.45)';ctx.font='17px Georgia,serif';
+  ctx.fillText('پاکستان پیپلز پارٹی',CX,y+95);
+
+  ctx.strokeStyle='rgba(200,16,46,0.5)';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(W*.28,y+112);ctx.lineTo(W*.4,y+112);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(W*.6,y+112);ctx.lineTo(W*.72,y+112);ctx.stroke();
+  ctx.fillStyle=RED;ctx.font='bold 16px Arial,sans-serif';
+  ctx.fillText('PS-101 · DISTRICT EAST · KARACHI',CX,y+117);
+
+  ctx.fillStyle='rgba(255,255,255,0.28)';ctx.font='12px Arial,sans-serif';
+  ctx.fillText('SOCIAL MEDIA WING — OFFICIAL MEMBERSHIP CARD',CX,y+140);
+
+  y+=155;
+
+  // Gold separator
+  const sep=ctx.createLinearGradient(0,y,W,y);
+  sep.addColorStop(0,'transparent');sep.addColorStop(0.2,'rgba(212,175,55,0.6)');
+  sep.addColorStop(0.5,'rgba(245,215,110,0.9)');sep.addColorStop(0.8,'rgba(212,175,55,0.6)');
+  sep.addColorStop(1,'transparent');
+  ctx.fillStyle=sep;ctx.fillRect(0,y,W,2);
+  y+=2;
+
+  // ── BODY ──────────────────────────────────────────────────────────
+  const BY=y+14;
+
+  // Photo frame
+  const PX=28,PY=BY,PW=175,PH=198;
+  const pfg=ctx.createLinearGradient(PX,PY,PX+PW,PY+PH);
+  pfg.addColorStop(0,GLDL);pfg.addColorStop(0.25,'#9A7B1C');
+  pfg.addColorStop(0.5,GLD);pfg.addColorStop(0.75,'#9A7B1C');pfg.addColorStop(1,GLDL);
+  ctx.fillStyle=pfg; rr(PX-5,PY-5,PW+10,PH+10,20); ctx.fill();
+  ctx.fillStyle='#0d0d0d'; rr(PX-2,PY-2,PW+4,PH+4,18); ctx.fill();
+
+  if(m.photo){
+    await new Promise(res=>{
+      const img=new Image();
+      img.onload=()=>{ctx.save();rr(PX,PY,PW,PH,16);ctx.clip();ctx.drawImage(img,PX,PY,PW,PH);ctx.restore();res();};
+      img.onerror=res; img.src=m.photo;
+    });
+  } else {
+    ctx.fillStyle='#1a1a1a'; rr(PX,PY,PW,PH,16); ctx.fill();
+    ctx.fillStyle='rgba(212,175,55,0.3)';ctx.font='50px Arial';ctx.textAlign='center';
+    ctx.fillText('👤',PX+PW/2,PY+PH/2+18);
+  }
+
+  // Mini flag under photo
+  const MFY=PY+PH+8;
+  ctx.fillStyle=RED; ctx.fillRect(PX,MFY,PW/3,6);
+  ctx.fillStyle='#111'; ctx.fillRect(PX+PW/3,MFY,PW/3,6);
+  ctx.fillStyle=GRN; ctx.fillRect(PX+PW*2/3,MFY,PW/3,6);
+  ctx.fillStyle='rgba(212,175,55,0.3)';ctx.font='12px Arial,sans-serif';ctx.textAlign='center';
+  ctx.fillText('OFFICIAL PHOTO',PX+PW/2,MFY+22);
+
+  // ── QR Code ────────────────────────────────────────────────────────
+  const QS=152,QX=W-QS-28,QY=BY;
+  const qfg=ctx.createLinearGradient(QX,QY,QX+QS,QY+QS);
+  qfg.addColorStop(0,GLDL);qfg.addColorStop(0.5,'#9A7B1C');qfg.addColorStop(1,GLD);
+  ctx.fillStyle=qfg; rr(QX-5,QY-5,QS+10,QS+10,14); ctx.fill();
+  ctx.fillStyle='#0d0d0d'; rr(QX-2,QY-2,QS+4,QS+4,12); ctx.fill();
+
+  // Draw QR from DOM img (already base64)
+  const qrImgEl=document.querySelector('#c_qr img');
+  if(qrImgEl && qrImgEl.complete && qrImgEl.naturalWidth>0){
+    ctx.drawImage(qrImgEl,QX,QY,QS,QS);
+  } else {
+    // Fallback: draw QR from QRCode.js canvas in DOM
+    const qrCanEl=document.querySelector('#c_qr canvas');
+    if(qrCanEl){ ctx.drawImage(qrCanEl,QX,QY,QS,QS); }
+    else {
+      ctx.fillStyle='#0d0d0d'; ctx.fillRect(QX,QY,QS,QS);
+      ctx.fillStyle=GLD; ctx.font='bold 12px monospace'; ctx.textAlign='center';
+      ctx.fillText('QR CODE',QX+QS/2,QY+QS/2-8);
+      ctx.fillText((m.memberID||'').slice(-8),QX+QS/2,QY+QS/2+12);
+    }
+  }
+  ctx.fillStyle='rgba(212,175,55,0.4)';ctx.font='12px Arial,sans-serif';ctx.textAlign='center';
+  ctx.fillText('SCAN TO VERIFY',QX+QS/2,QY+QS+20);
+
+  // ── INFO ─────────────────────────────────────────────────────────
+  const IX=PX+PW+28, IW=QX-IX-20;
+  let IY=BY;
+  ctx.textAlign='left';
+
+  // Name gradient text
+  const nmg=ctx.createLinearGradient(IX,0,IX+IW,0);
+  nmg.addColorStop(0,'#fff');nmg.addColorStop(0.5,GLDL);nmg.addColorStop(1,'#fff');
+  ctx.fillStyle=nmg; ctx.font='bold 34px Georgia,serif';
+  const words=(m.name||'').split(' ');
+  let line='', lines=[];
+  for(const w of words){
+    const t=line?line+' '+w:w;
+    if(ctx.measureText(t).width>IW){lines.push(line);line=w;}else line=t;
+  }
+  if(line)lines.push(line);
+  lines.forEach((l,i)=>{ctx.fillText(l,IX,IY+36+i*42);});
+  IY+=36+lines.length*42;
+
+  if(m.father){
+    ctx.fillStyle='rgba(255,255,255,0.38)';ctx.font='18px Georgia,serif';
+    ctx.fillText('S/O '+m.father,IX,IY+8);IY+=32;
+  }
+
+  // Role badge
+  IY+=10;
+  ctx.font='bold 15px Arial,sans-serif';
+  const rt=(m.role||'').toUpperCase();
+  const rw=ctx.measureText(rt).width+44;
+  const rrg=ctx.createLinearGradient(IX,0,IX+rw,0);
+  rrg.addColorStop(0,'rgba(200,16,46,0.9)');rrg.addColorStop(1,'rgba(139,0,0,0.95)');
+  ctx.fillStyle=rrg; rr(IX,IY,rw,34,17); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.8)';
+  ctx.beginPath();ctx.arc(IX+13,IY+17,4,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='white';ctx.fillText(rt,IX+23,IY+22);
+  IY+=50;
+
+  // Member ID box
+  ctx.fillStyle='rgba(212,175,55,0.4)';ctx.font='13px Arial,sans-serif';
+  ctx.fillText('MEMBER ID',IX,IY);IY+=18;
+  ctx.fillStyle='rgba(212,175,55,0.07)'; rr(IX,IY-14,IW,30,8); ctx.fill();
+  ctx.strokeStyle='rgba(212,175,55,0.2)';ctx.lineWidth=1; rr(IX,IY-14,IW,30,8); ctx.stroke();
+  ctx.fillStyle=GLDL;ctx.font='19px "Courier New",monospace';
+  ctx.fillText(m.memberID||'',IX+10,IY+9);IY+=36;
+
+  // Details
+  const dets=[[m.mobile,'📱'],[m.area,'📍'],[m.uc,'🏛'],[m.ward,'#️⃣'],[m.cnic,'🪪'],[m.joinedPPP?'Since '+m.joinedPPP:'','🗓']].filter(d=>d[0]);
+  ctx.font='16px Arial,sans-serif';ctx.fillStyle='rgba(255,255,255,0.5)';
+  dets.forEach((d,i)=>{
+    const col=i%2,row=Math.floor(i/2);
+    ctx.fillText(d[1]+' '+d[0],IX+col*(IW/2+10),IY+row*28);
+  });
+  IY+=Math.ceil(dets.length/2)*28+10;
+
+  // Social badges
+  ctx.font='13px Arial,sans-serif';
+  let SX=IX;
+  [[m.twitter,'𝕏','rgba(0,0,0,0.85)'],[m.facebook,'f','rgba(24,119,242,0.85)'],
+   [m.instagram,'📸','#dc2743'],[m.youtube,'▶','rgba(255,0,0,0.85)']].filter(s=>s[0]).forEach(([v,ic,clr])=>{
+    const t=ic+' '+v, sw=ctx.measureText(t).width+20;
+    ctx.fillStyle=clr; rr(SX,IY,sw,24,12); ctx.fill();
+    ctx.fillStyle='white'; ctx.fillText(t,SX+10,IY+17);
+    SX+=sw+6;
+  });
+
+  // ── SIGNATURE ROW ─────────────────────────────────────────────────
+  const SRY=Math.max(BY+240,IY+28);
+
+  // Issue stamp
+  ctx.strokeStyle='rgba(200,16,46,0.5)';ctx.lineWidth=2;
+  rr(28,SRY,136,54,8);ctx.stroke();
+  ctx.fillStyle='rgba(200,16,46,0.06)'; rr(28,SRY,136,54,8); ctx.fill();
+  ctx.fillStyle=RED;ctx.font='bold 13px Arial,sans-serif';ctx.textAlign='center';
+  ctx.fillText('ISSUED',96,SRY+22);
+  ctx.font='12px Arial,sans-serif';ctx.fillText(todayEn(),96,SRY+40);
+
+  // Slogan
+  ctx.fillStyle='rgba(212,175,55,0.6)';ctx.font='bold 15px Georgia,serif';ctx.textAlign='center';
+  ctx.fillText('☽ ROTI · KAPRA · MAKAN ★',W/2,SRY+32);
+
+  // Signature box
+  const SBX=W-224,SBY=SRY,SBW=198,SBH=58;
+  ctx.strokeStyle='rgba(212,175,55,0.3)';ctx.lineWidth=1.5;
+  rr(SBX,SBY,SBW,SBH,8);ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,0.03)'; rr(SBX,SBY,SBW,SBH,8); ctx.fill();
+  if(m.signature){
+    await new Promise(res=>{
+      const si=new Image();
+      si.onload=()=>{ctx.save();rr(SBX+2,SBY+2,SBW-4,SBH-4,7);ctx.clip();ctx.drawImage(si,SBX+4,SBY+4,SBW-8,SBH-8);ctx.restore();res();};
+      si.onerror=res;si.src=m.signature;
+    });
+  } else {
+    ctx.fillStyle='rgba(255,255,255,0.18)';ctx.font='13px Arial,sans-serif';ctx.textAlign='center';
+    ctx.fillText('Signature',SBX+SBW/2,SBY+SBH/2+5);
+  }
+  ctx.fillStyle='rgba(212,175,55,0.4)';ctx.font='11px Arial,sans-serif';ctx.textAlign='center';
+  ctx.fillText('General Secretary — PPP PS-101',SBX+SBW/2,SBY+SBH+16);
+
+  // ── GOLD DIVIDER ──────────────────────────────────────────────────
+  const DY=H-36;
+  const dg=ctx.createLinearGradient(0,DY,W,DY);
+  dg.addColorStop(0,'transparent');dg.addColorStop(0.2,'rgba(212,175,55,0.5)');
+  dg.addColorStop(0.5,'rgba(245,215,110,0.8)');dg.addColorStop(0.8,'rgba(212,175,55,0.5)');
+  dg.addColorStop(1,'transparent');
+  ctx.fillStyle=dg; ctx.fillRect(36,DY-2,W-72,2);
+
+  // Footer text
+  ctx.fillStyle='rgba(255,255,255,0.2)';ctx.font='10px Arial,sans-serif';ctx.textAlign='center';
+  ctx.fillText('Pakistan Peoples Party · PS-101 Social Media Wing · District East Karachi · Official Membership',W/2,DY+14);
+
+  // ── BOTTOM FLAG STRIPE ────────────────────────────────────────────
+  ctx.save(); rr(0,0,W,H,32); ctx.clip();
+  ctx.fillStyle=RED;  ctx.fillRect(0,H-ST,W/3,ST);
+  ctx.fillStyle='#111'; ctx.fillRect(W/3,H-ST,W/3,ST);
+  ctx.fillStyle=GRN;  ctx.fillRect(W*2/3,H-ST,W/3,ST);
+  ctx.restore();
+
+  return cv;
 }
 
+// ── PRINT ─────────────────────────────────────────────────────────────────
+async function printCard(){
+  showStatus('⏳ پرنٹ تیار ہو رہا ہے...');
+  try{
+    const cv=await drawCardToCanvas();
+    const dataURL=cv.toDataURL('image/png',1.0);
+    const w=window.open('','_blank');
+    if(!w){alert('براہ کرم browser pop-up allow کریں');hideStatus();return;}
+    w.document.write(`<!DOCTYPE html><html><head>
+    <title>PPP Card - ${currentMember?.name||''}</title>
+    <style>*{margin:0;padding:0}body{background:#111;text-align:center;padding:10px}
+    img{max-width:100%;border-radius:12px}
+    @media print{body{background:white;padding:0}img{width:85.6mm}}</style>
+    </head><body>
+    <img src="${dataURL}"/>
+    <script>setTimeout(function(){window.print();},600);<\/script>
+    </body></html>`);
+    w.document.close();
+    hideStatus();
+  }catch(e){showStatus('⚠ خطا: '+e.message);setTimeout(hideStatus,4000);}
+}
+
+// ── DOWNLOAD PNG ──────────────────────────────────────────────────────────
 async function downloadCard(){
   showStatus('⏳ کارڈ تصویر بن رہی ہے...');
   try{
-    const card=document.getElementById('ppp-card');
-    const canvas=await html2canvas(card,{scale:2,backgroundColor:null,useCORS:true,allowTaint:true,logging:false});
-    const a=document.createElement('a');
-    a.download=`PPP-Membership-${currentMember?.memberID||'card'}.png`;
-    a.href=canvas.toDataURL('image/png');
-    a.click();
-    showStatus('✅ کارڈ ڈاؤنلوڈ ہو گیا!');
-    setTimeout(hideStatus,3000);
-  }catch(err){showStatus('⚠ براہ کرم دوبارہ کوشش کریں');setTimeout(hideStatus,3000);}
+    const cv=await drawCardToCanvas();
+    cv.toBlob(blob=>{
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;
+      a.download=`PPP-Membership-${currentMember?.memberID||'card'}.png`;
+      document.body.appendChild(a);a.click();
+      document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url),3000);
+      showStatus('✅ کارڈ ڈاؤنلوڈ ہو گیا! Downloads فولڈر میں دیکھیں');
+      setTimeout(hideStatus,4000);
+    },'image/png',1.0);
+  }catch(e){showStatus('⚠ خطا: '+e.message);setTimeout(hideStatus,5000);}
 }
 
+// ── WHATSAPP ──────────────────────────────────────────────────────────────
 async function sendWhatsApp(){
   if(!currentMember)return;
+  const rawNum=(currentMember.whatsapp||currentMember.mobile||'').trim();
+  if(!rawNum){showStatus('⚠ موبائل نمبر موجود نہیں');setTimeout(hideStatus,3000);return;}
+
   showStatus('⏳ کارڈ تصویر بن رہی ہے...');
   try{
-    const card=document.getElementById('ppp-card');
-    const canvas=await html2canvas(card,{scale:2,backgroundColor:null,useCORS:true,allowTaint:true,logging:false});
-    const a=document.createElement('a');
-    a.download=`PPP-Card-${currentMember.memberID}.png`;
-    a.href=canvas.toDataURL('image/png');
-    a.click();
-    let num=(currentMember.whatsapp||currentMember.mobile||'').replace(/[\s\-\(\)]/g,'');
-    if(num.startsWith('0'))num='92'+num.slice(1);
-    const msg=encodeURIComponent(
-      `🎉 *PPP PS-101 Membership Card*\n\n`+
-      `*Name:* ${currentMember.name}\n`+
-      `*Member ID:* ${currentMember.memberID}\n`+
-      `*Role:* ${currentMember.role}\n`+
-      `*Area:* ${currentMember.area} | UC: ${currentMember.uc||'—'} | Ward: ${currentMember.ward||'—'}\n\n`+
-      `تصویر ڈاؤنلوڈ ہو گئی ہے — پلاسٹک کارڈ کے لیے پرنٹ شاپ لے جائیں 🇵🇰\n\n`+
-      `Pakistan Peoples Party — PS-101 District East Karachi`
-    );
-    setTimeout(()=>{
-      if(num){window.open(`https://wa.me/${num}?text=${msg}`,'_blank');}
-      showStatus('✅ واٹس ایپ کھل رہا ہے — تصویر منسلک کریں!');
-      setTimeout(hideStatus,4000);
-    },1000);
-  }catch(err){showStatus('⚠ دوبارہ کوشش کریں');setTimeout(hideStatus,3000);}
+    const cv=await drawCardToCanvas();
+    cv.toBlob(blob=>{
+      // Step 1: Download image
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;
+      a.download=`PPP-Card-${currentMember.memberID}.png`;
+      document.body.appendChild(a);a.click();
+      document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url),5000);
+
+      // Step 2: Format number
+      let num=rawNum.replace(/[\s\-\(\)\.]/g,'');
+      if(num.startsWith('0'))num='92'+num.slice(1);
+      if(num.startsWith('+'))num=num.slice(1);
+
+      // Step 3: Open WhatsApp
+      const msg=encodeURIComponent(
+        `🎉 *PPP PS-101 ممبرشپ کارڈ*\n\n`+
+        `*نام:* ${currentMember.name}\n`+
+        `*ممبر ID:* ${currentMember.memberID}\n`+
+        `*کردار:* ${currentMember.role}\n`+
+        `*علاقہ:* ${currentMember.area}`+
+        (currentMember.uc?` | ${currentMember.uc}`:'')+
+        (currentMember.ward?` | ${currentMember.ward}`:'')+
+        `\n\n📎 کارڈ تصویر آپ کے Downloads میں ہے۔\n`+
+        `اسے WhatsApp میں attach کر کے بھیجیں۔\n\n`+
+        `پلاسٹک کارڈ کے لیے یہ تصویر پرنٹ شاپ پر لے جائیں 🇵🇰\n`+
+        `Pakistan Peoples Party — PS-101 District East Karachi`
+      );
+      showStatus('✅ تصویر ڈاؤنلوڈ ہوئی — WhatsApp کھل رہا ہے...');
+      setTimeout(()=>{
+        window.open(`https://wa.me/${num}?text=${msg}`,'_blank');
+        showStatus('✅ WhatsApp کھل گیا — تصویر Attach کریں اور بھیجیں 📎');
+        setTimeout(hideStatus,7000);
+      },1500);
+    },'image/png',1.0);
+  }catch(e){showStatus('⚠ خطا: '+e.message);setTimeout(hideStatus,5000);}
 }
 
 // ══ INIT ═══════════════════════════════════════════════════════════════════
