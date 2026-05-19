@@ -531,6 +531,10 @@ label.lbl .req{font-size:10px;color:var(--red);font-weight:normal;}
             <label class="lbl">YouTube چینل</label>
             <input class="inp" style="direction:ltr" id="f_youtube" placeholder="@channel"/>
           </div>
+          <div class="field">
+            <label class="lbl">🎵 TikTok اکاؤنٹ</label>
+            <input class="inp" style="direction:ltr" id="f_tiktok" placeholder="@username"/>
+          </div>
         </div>
       </div>
 
@@ -832,6 +836,7 @@ function submitForm(){
     facebook:document.getElementById('f_facebook').value.trim(),
     instagram:document.getElementById('f_instagram').value.trim(),
     youtube:document.getElementById('f_youtube').value.trim(),
+    tiktok:document.getElementById('f_tiktok').value.trim(),
     isNew:isNew,
     prevParty:isNew?document.getElementById('f_prevparty').value:'',
     prevRole:isNew?document.getElementById('f_prevrole').value.trim():'',
@@ -849,7 +854,7 @@ function submitForm(){
 
 function resetForm(){
   ['name','father','cnic','mobile','whatsapp','area','uc','ward','address',
-   'role','joined','twitter','facebook','instagram','youtube',
+   'role','joined','twitter','facebook','instagram','youtube','tiktok',
    'prevrole','prevsince'].forEach(id=>{
     const el=document.getElementById('f_'+id);
     if(el) el.value='';
@@ -977,6 +982,7 @@ function openCardForMember(m){
   if(m.facebook)soc.push(`<span class="sbadge fb">f ${m.facebook}</span>`);
   if(m.instagram)soc.push(`<span class="sbadge ig">📸 ${m.instagram}</span>`);
   if(m.youtube)soc.push(`<span class="sbadge yt">▶ ${m.youtube}</span>`);
+  if(m.tiktok)soc.push(`<span class="sbadge" style="background:linear-gradient(135deg,#010101,#69C9D0);border:1px solid #69C9D0">🎵 ${m.tiktok}</span>`);
   document.getElementById('c_social').innerHTML=soc.join('');
   // Prev party
   const pn=document.getElementById('c_prevnote');
@@ -1140,7 +1146,7 @@ function hideStatus(){document.getElementById('modalStatus').style.display='none
 // ── Pure Canvas 2D card renderer — no html2canvas, no CORS issues ──────────
 async function drawCardToCanvas(){
   const m=currentMember; if(!m)return null;
-  const W=920, H=580;
+  const W=920, H=680;  // ← taller card so signature fits
   const cv=document.createElement('canvas');
   cv.width=W; cv.height=H;
   const ctx=cv.getContext('2d');
@@ -1326,7 +1332,7 @@ async function drawCardToCanvas(){
   IY+=36+lines.length*42;
 
   if(m.father){
-    ctx.fillStyle='rgba(255,255,255,0.38)';ctx.font='18px Georgia,serif';
+    ctx.fillStyle='rgba(255,255,255,0.85)';ctx.font='18px Georgia,serif';
     ctx.fillText('S/O '+m.father,IX,IY+8);IY+=32;
   }
 
@@ -1351,14 +1357,22 @@ async function drawCardToCanvas(){
   ctx.fillStyle=GLDL;ctx.font='19px "Courier New",monospace';
   ctx.fillText(m.memberID||'',IX+10,IY+9);IY+=36;
 
-  // Details
-  const dets=[[m.mobile,'📱'],[m.area,'📍'],[m.uc,'🏛'],[m.ward,'#️⃣'],[m.cnic,'🪪'],[m.joinedPPP?'Since '+m.joinedPPP:'','🗓']].filter(d=>d[0]);
-  ctx.font='16px Arial,sans-serif';ctx.fillStyle='rgba(255,255,255,0.5)';
+  // Details - bright white text with subtle dark pill background
+  const dets=[[m.mobile,'📱'],[m.area,'📍'],[m.uc,'🏛'],[m.ward,'# '],[m.cnic,'🪪'],[m.joinedPPP?'Since '+m.joinedPPP:'','🗓']].filter(d=>d[0]);
+  ctx.font='bold 16px Arial,sans-serif';
   dets.forEach((d,i)=>{
     const col=i%2,row=Math.floor(i/2);
-    ctx.fillText(d[1]+' '+d[0],IX+col*(IW/2+10),IY+row*28);
+    const dx=IX+col*(IW/2+10), dy=IY+row*32;
+    // Dark pill bg for readability
+    const txt=d[1]+' '+d[0];
+    const tw=ctx.measureText(txt).width+18;
+    ctx.fillStyle='rgba(255,255,255,0.08)';
+    rr(dx-2,dy-18,tw,24,6); ctx.fill();
+    // Bright white text
+    ctx.fillStyle='#ffffff';
+    ctx.fillText(txt,dx+6,dy-1);
   });
-  IY+=Math.ceil(dets.length/2)*28+10;
+  IY+=Math.ceil(dets.length/2)*32+12;
 
   // Social badges
   ctx.font='13px Arial,sans-serif';
@@ -1371,50 +1385,81 @@ async function drawCardToCanvas(){
     SX+=sw+6;
   });
 
-  // ── SIGNATURE ROW ─────────────────────────────────────────────────
-  const SRY=Math.max(BY+240,IY+28);
+  // ── SIGNATURE ROW — fixed at bottom, always visible ──────────────────
+  const SRY = H - 130;  // always 130px from bottom — guaranteed visible
 
-  // Issue stamp
-  ctx.strokeStyle='rgba(200,16,46,0.5)';ctx.lineWidth=2;
-  rr(28,SRY,136,54,8);ctx.stroke();
-  ctx.fillStyle='rgba(200,16,46,0.06)'; rr(28,SRY,136,54,8); ctx.fill();
-  ctx.fillStyle=RED;ctx.font='bold 13px Arial,sans-serif';ctx.textAlign='center';
-  ctx.fillText('ISSUED',96,SRY+22);
-  ctx.font='12px Arial,sans-serif';ctx.fillText(todayEn(),96,SRY+40);
+  // Separator line above sig row
+  const sepSig=ctx.createLinearGradient(0,SRY-10,W,SRY-10);
+  sepSig.addColorStop(0,'transparent');sepSig.addColorStop(0.15,'rgba(212,175,55,0.4)');
+  sepSig.addColorStop(0.5,'rgba(245,215,110,0.7)');sepSig.addColorStop(0.85,'rgba(212,175,55,0.4)');
+  sepSig.addColorStop(1,'transparent');
+  ctx.fillStyle=sepSig; ctx.fillRect(36,SRY-10,W-72,1.5);
 
-  // Slogan
-  ctx.fillStyle='rgba(212,175,55,0.6)';ctx.font='bold 15px Georgia,serif';ctx.textAlign='center';
-  ctx.fillText('☽ ROTI · KAPRA · MAKAN ★',W/2,SRY+32);
+  // Issue stamp (left)
+  ctx.fillStyle='rgba(200,16,46,0.15)'; rr(28,SRY,140,60,8); ctx.fill();
+  ctx.strokeStyle=RED; ctx.lineWidth=1.5; rr(28,SRY,140,60,8); ctx.stroke();
+  ctx.fillStyle='white'; ctx.font='bold 14px Arial,sans-serif'; ctx.textAlign='center';
+  ctx.fillText('ISSUED',98,SRY+24);
+  ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.font='13px Arial,sans-serif';
+  ctx.fillText(todayEn(),98,SRY+44);
 
-  // Signature box
-  const SBX=W-224,SBY=SRY,SBW=198,SBH=58;
-  ctx.strokeStyle='rgba(212,175,55,0.3)';ctx.lineWidth=1.5;
-  rr(SBX,SBY,SBW,SBH,8);ctx.stroke();
-  ctx.fillStyle='rgba(255,255,255,0.03)'; rr(SBX,SBY,SBW,SBH,8); ctx.fill();
+  // Slogan (center)
+  ctx.fillStyle=GLD; ctx.font='bold 16px Georgia,serif'; ctx.textAlign='center';
+  ctx.fillText('☽  ROTI · KAPRA · MAKAN  ★',W/2,SRY+35);
+
+  // ── SIGNATURE BOX (right) — prominent gold frame ──────────────────
+  const SBX=W-250, SBY=SRY-4, SBW=222, SBH=68;
+
+  // Gold border frame
+  const sbfg=ctx.createLinearGradient(SBX,SBY,SBX+SBW,SBY+SBH);
+  sbfg.addColorStop(0,GLDL); sbfg.addColorStop(0.5,'#9A7B1C'); sbfg.addColorStop(1,GLDL);
+  ctx.fillStyle=sbfg; rr(SBX-3,SBY-3,SBW+6,SBH+6,11); ctx.fill();
+
+  // Dark inner bg so signature is visible
+  ctx.fillStyle='#1a1a1a'; rr(SBX,SBY,SBW,SBH,9); ctx.fill();
+
   if(m.signature){
     await new Promise(res=>{
       const si=new Image();
-      si.onload=()=>{ctx.save();rr(SBX+2,SBY+2,SBW-4,SBH-4,7);ctx.clip();ctx.drawImage(si,SBX+4,SBY+4,SBW-8,SBH-8);ctx.restore();res();};
-      si.onerror=res;si.src=m.signature;
+      si.onload=()=>{
+        ctx.save();
+        rr(SBX+2,SBY+2,SBW-4,SBH-4,8); ctx.clip();
+        // White bg first so dark ink signature shows on dark card
+        ctx.fillStyle='#f5f5f5'; ctx.fillRect(SBX+2,SBY+2,SBW-4,SBH-4);
+        ctx.drawImage(si,SBX+4,SBY+4,SBW-8,SBH-8);
+        ctx.restore();
+        res();
+      };
+      si.onerror=res; si.src=m.signature;
     });
   } else {
-    ctx.fillStyle='rgba(255,255,255,0.18)';ctx.font='13px Arial,sans-serif';ctx.textAlign='center';
-    ctx.fillText('Signature',SBX+SBW/2,SBY+SBH/2+5);
+    // Dashed placeholder
+    ctx.setLineDash([5,4]);
+    ctx.strokeStyle='rgba(212,175,55,0.5)'; ctx.lineWidth=1;
+    rr(SBX+8,SBY+8,SBW-16,SBH-16,6); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='rgba(212,175,55,0.5)'; ctx.font='italic 14px Georgia,serif';
+    ctx.textAlign='center';
+    ctx.fillText('Awaiting Signature',SBX+SBW/2,SBY+SBH/2+5);
   }
-  ctx.fillStyle='rgba(212,175,55,0.4)';ctx.font='11px Arial,sans-serif';ctx.textAlign='center';
-  ctx.fillText('General Secretary — PPP PS-101',SBX+SBW/2,SBY+SBH+16);
+
+  // Label below signature box
+  ctx.fillStyle=GLD; ctx.font='bold 12px Arial,sans-serif'; ctx.textAlign='center';
+  ctx.fillText('General Secretary',SBX+SBW/2,SBY+SBH+18);
+  ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='11px Arial,sans-serif';
+  ctx.fillText('PPP PS-101 · District East Karachi',SBX+SBW/2,SBY+SBH+32);
 
   // ── GOLD DIVIDER ──────────────────────────────────────────────────
-  const DY=H-36;
+  const DY=H-40;
   const dg=ctx.createLinearGradient(0,DY,W,DY);
   dg.addColorStop(0,'transparent');dg.addColorStop(0.2,'rgba(212,175,55,0.5)');
   dg.addColorStop(0.5,'rgba(245,215,110,0.8)');dg.addColorStop(0.8,'rgba(212,175,55,0.5)');
   dg.addColorStop(1,'transparent');
   ctx.fillStyle=dg; ctx.fillRect(36,DY-2,W-72,2);
 
-  // Footer text
-  ctx.fillStyle='rgba(255,255,255,0.2)';ctx.font='10px Arial,sans-serif';ctx.textAlign='center';
-  ctx.fillText('Pakistan Peoples Party · PS-101 Social Media Wing · District East Karachi · Official Membership',W/2,DY+14);
+  // Footer text — white so readable
+  ctx.fillStyle='rgba(255,255,255,0.55)';ctx.font='11px Arial,sans-serif';ctx.textAlign='center';
+  ctx.fillText('Pakistan Peoples Party · PS-101 Social Media Wing · District East Karachi · Official Membership',W/2,DY+16);
 
   // ── BOTTOM FLAG STRIPE ────────────────────────────────────────────
   ctx.save(); rr(0,0,W,H,32); ctx.clip();
